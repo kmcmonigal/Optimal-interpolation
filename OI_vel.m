@@ -45,7 +45,7 @@ x_corr_func=@(x) exp(-(x(:)/xc).^2).*cos(pi.*x(:)./(2.*xc));
 z_corr_func=@(z) exp(-(z(:)/zc).^2);
 
 % optimal interpolation of v
-for time=1:size(A_int.v)
+for time=1%:size(A_int.v,2) % change back after running
     clear Noise2
     clear u_obs_time
     clear dx
@@ -140,7 +140,7 @@ D_int.u=D.utmp4_filt(:,3:727);
 
 all_obs=[A_int.u;B_int.u;C_int.u;D_int.u];
 
-for time=1:size(A_int.v,2) 
+for time=1:size(A_int.v,2) % change back after running
     clear Noise2
     clear u_obs_time
     clear dx
