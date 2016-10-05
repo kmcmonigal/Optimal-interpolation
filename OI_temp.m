@@ -17,8 +17,11 @@ e_pos = [28.0316,-34.29];
 f_pos = [28.17,-34.5380];
 g_pos = [28.3453,-34.8213];
 
-B_dx=1000*sw_dist([coast_lat b_pos(2)],[coast_lon b_pos(1)],'km');
-D_dx=1000*sw_dist([coast_lat d_pos(2)],[coast_lon d_pos(1)],'km');
+instr_pos = [c2_pos;c3_pos;a_pos;b_pos;c_pos;d_pos;e_pos;f_pos;g_pos];
+
+for i=1:9
+    dist(i)=1000*sw_dist([instr_pos(1,2) instr_pos(i,2)],[instr_pos(1,1) instr_pos(i,1)],'km');
+end
 
 B_int.temp=micro_b.temp;
 D_int.temp=micro_d.temp;
@@ -26,13 +29,21 @@ D_int.temp=micro_d.temp;
 B_int.pres=micro_b.pres;
 D_int.pres=micro_d.pres;
 
-B_temp_var=nanvar(B_int.temp); %variance of the T measurements, to create a ratio with the noise level
-D_temp_var=nanvar(D_int.temp);
+B_int.sal=micro_b.sal;
+D_int.sal=micro_d.sal;
 
-dx_obs=[B_dx;B_dx;B_dx;B_dx;B_dx;D_dx;D_dx;D_dx;D_dx];
+% need to get theta
+B_int.theta=gsw_pt_from_t(B_int.sal,B_int.temp,B_int.pres);
+D_int.theta=gsw_pt_from_t(D_int.sal,D_int.temp,D_int.pres);
+
+B_temp_var=nanvar(B_int.theta); %variance of the T measurements, to create a ratio with the noise level
+D_temp_var=nanvar(D_int.theta);
+
+dx_obs=[dist(4);dist(4);dist(4);dist(4);dist(4);dist(6);dist(6);dist(6);dist(6)];
+
 for i=1:size(micro_b.temp,1)
     dp_obs(:,i)=[B_int.pres(i,:).';D_int.pres(i,:).'];
-    temp_obs(:,i)=[B_int.temp(i,:).';D_int.temp(i,:).'];
+    temp_obs(:,i)=[B_int.theta(i,:).';D_int.theta(i,:).'];
 end
         
 var_obs=[B_temp_var.';D_temp_var.'];
@@ -49,8 +60,12 @@ for i=1:9
     end
 end
 
-x=0:500:1000*sw_dist([coast_lat d_pos(2)],[coast_lon d_pos(1)],'km'); %interpolate/extrapolate from the coast out to mooring B
-p=0:20:5000; %just extrapolate down to 5000 dbar, then later will make anything under topography into NaN
+clear x
+clear xgrid
+clear p
+clear pgrid
+x=0:500:1000*sw_dist([c2_pos(2) d_pos(2)],[c2_pos(1) d_pos(1)],'km'); %interpolate/extrapolate from the coast out to mooring B
+p=10:10:4200; %just extrapolate down to 4200 dbar, then later will make anything under topography into NaN
 for i=1:length(p)
     xgrid(i,:)=x(:);
 end
@@ -64,19 +79,28 @@ zc_l=790; %vertical correlation length from cross correlations (m)
 x_corr_func=@(x) exp(-(x(:)/xc_l).^2).*cos(pi.*x(:)./(2.*xc_l)); %horiz correlation function
 z_corr_func=@(z) exp(-(z(:)/zc_l).^2);
 
-% find the closest grid point to each measurement
+% find the closest grid point to subtract off 2013 data
+
 for i=1:9
-    for j=1:182 %may not be 437
-        grid_dist(i,j)=abs(xgrid(1,j)-dx_obs(i));
+    for j=1:152
+        grid_dist(i,j)=abs(x(1,j)-dx_obs(i));
     end
-    for j=1:251
-        grid_pres(i,j)=abs(pgrid(j,1)-dp_obs(i));
+    for j=1:420
+        for k=1:722
+            dp_dist(i,j,k)=abs(p(1,j)-dp_obs(i,k));
+        end
     end
 end
 
 for i=1:9
     [M(i),I(i)] = min(grid_dist(i,:));
-    [Mz(i),Iz(i)]=min(grid_pres(i,:));
+    [Mp(i,:),Ip(i,:)]=min(dp_dist(i,:,:));
+end
+
+for time=1:size(micro_b.pres,1) 
+    for k=1:9
+        temp_obs_minus13(k,time)=temp_obs(k,time)-int_t_2013(Ip(k,time),I(k))-int_t2_2013(Ip(k,time),I(k)); %not totally sure this is right
+    end
 end
 
 clear weight_corr
@@ -86,14 +110,14 @@ for time=1:size(micro_b.pres,1) % this loop is where the optimal interpolation o
     for i=1:length(ratio)
         for j=1:length(pgrid)
             for k=1:size(pgrid,2)
-                weight_corr(i,j,k)=x_corr_func(xgrid(j,k)-dx_obs(i))*z_corr_func(pgrid(j,k)-dp_obs(i));
+                weight_corr(i,j,k)=x_corr_func(abs(xgrid(j,k)-dx_obs(i)))*z_corr_func(abs(pgrid(j,k)-dp_obs(i)));
             end
         end
     end
     
     for i=1:length(ratio)
         for j=1:length(ratio)
-            cross_corr(i,j)=x_corr_func(dx_obs(i)-dx_obs(j))*z_corr_func(dp_obs(i)-dp_obs(j));
+            cross_corr(i,j)=x_corr_func(abs(dx_obs(i)-dx_obs(j)))*z_corr_func(abs(dp_obs(i)-dp_obs(j)));
         end
     end
 
@@ -105,7 +129,7 @@ for time=1:size(micro_b.pres,1) % this loop is where the optimal interpolation o
     
     for j=1:length(pgrid)
         for k=1:size(pgrid,2)
-            int_t(j,k,time)=weights(:,j,k).'*temp_obs(:,time); %check to see if dimensions work?
+            int_t(j,k,time)=weights(:,j,k).'*temp_obs_minus13(:,time); %check to see if dimensions work?
         end
     end
 end
@@ -114,7 +138,7 @@ end
 
 for time=1:size(micro_b.pres,1)
     for k=1:9
-        temp_obs_anom(i,time)=temp_obs(k,time)-int_t(Iz(k),I(k),time); %not totally sure this is right
+        temp_obs_anom(k,time)=temp_obs_minus13(k,time)-int_t(Ip(k,time),I(k),time); %not totally sure this is right
     end
 end
 
@@ -156,67 +180,132 @@ for time=1:size(micro_b.pres,1) % this loop is where the optimal interpolation o
     end
 end
 
+% calculate the expected error
+background_error=nan(420,152);
+for i=1:size(pgrid,1)
+    for j=1:size(pgrid,2)
+        background_error(i,j)=1; %let's say it's .01 C everywhere, see what happens
+    end
+end
+
+clear analysis_error
+for i=1:size(pgrid,1)
+    for j=1:size(pgrid,2)
+        %term2(i,j)=(weight_corr(:,i,j).'*inv(ratio+cross_corr)*weight_corr(:,i,j));
+        analysis_error(i,j)=background_error(i,j)-(weight_corr(:,i,j).'*inv(ratio+cross_corr)*weight_corr(:,i,j));
+    end
+end
+
 % graph up the time mean
-for i=1:251
-    for j=1:182
+for i=1:420
+    for j=1:152
         mean_t(i,j)=nanmean(int_t(i,j,:));
         mean_t2(i,j)=nanmean(int_t2(i,j,:));
     end
 end
 
+% delete parts under topography
+
 figure
 hold on
-contourf(xgrid,pgrid,mean_t)
+[C,h]=contourf(xgrid,pgrid,int_t_2013(:,1:152)+int_t2_2013(:,1:152),0:1:20)
 axis 'ij'
 xlabel('Distance from coast (m)','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
-title('Time mean interpolated temperature: large scale with abs() removed','FontSize',24)
-%caxis
-%clabel
+title('Background temperature','FontSize',24)
+caxis([0 20])
+clabel(C,h,0:5:20)
 cmocean('thermal')
+colorbar
+brighten(.3)
+
+figure
+hold on
+[C,h]=contourf(xgrid,pgrid,mean_t,-5:.1:5)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Pressure (dbar)','FontSize',24)
+title('Time mean interpolated temperature: large scale','FontSize',24)
+%caxis
+clabel(C,h,-5:.2:5)
+cmocean('balance','zero')
 colorbar
 
 figure
 hold on
-contourf(xgrid,pgrid,mean_t2)
+[C,h]=contourf(xgrid,pgrid,mean_t2,-5:.1:5)
 axis 'ij'
 xlabel('Distance from coast (m)','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
 title('Time mean interpolated temperature: small scale','FontSize',24)
-%caxis
-%clabel
-cmocean('thermal')
+clabel(C,h,-5:.2:5)
+cmocean('balance','zero')
 colorbar
+
 
 figure
 hold on
-contourf(xgrid,pgrid,mean_t+mean_t2)
+[C,h]=contourf(xgrid,pgrid,mean_t+mean_t2+int_t_2013(:,1:152)+int_t2_2013(:,1:152),0:1:20)
 axis 'ij'
 xlabel('Distance from coast (m)','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
-title('Time mean interpolated temperature: large+small scale','FontSize',24)
-%caxis
-%clabel
+title('Time mean interpolated temperature: large+small scale+background','FontSize',24)
+caxis([0 20])
+clabel(C,h,0:5:20)
 cmocean('thermal')
 colorbar
+brighten(.3)
 
+figure
+hold on
+[C,h]=contourf(xgrid,pgrid,analysis_error,0:.125:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Pressure (dbar)','FontSize',24)
+title('Expected error ratio','FontSize',24)
+clabel(C,h,0:.25:1)
+cmocean('curl','zero')
+colorbar
+brighten(.3)
 
 %% interpolate salinity in a similar fashion
 xc=77*1000; 
 zc=171; 
 
-B_int.sal=micro_b.sal;
-D_int.sal=micro_d.sal;
+x_corr_func=@(x) exp(-(x(:)/xc).^2).*cos(pi.*x(:)./(2.*xc)); %horiz correlation function
+z_corr_func=@(z) exp(-(z(:)/zc).^2);
+
+for i=1:9
+    for j=1:152
+        grid_dist(i,j)=abs(x(1,j)-dx_obs(i));
+    end
+    for j=1:420
+        for k=1:722
+            dp_dist(i,j,k)=abs(p(1,j)-dp_obs(i,k));
+        end
+    end
+end
+
+for i=1:9
+    [M(i),I(i)] = min(grid_dist(i,:));
+    [Mp(i,:),Ip(i,:)]=min(dp_dist(i,:,:));
+end
 
 B_sal_var=nanvar(B_int.sal); %variance of the T measurements, to create a ratio with the noise level
 D_sal_var=nanvar(D_int.sal);
 
-dx_obs=[B_dx;B_dx;B_dx;B_dx;B_dx;D_dx;D_dx;D_dx;D_dx];
+%dx_obs=[B_dx;B_dx;B_dx;B_dx;B_dx;D_dx;D_dx;D_dx;D_dx];
 for i=1:size(micro_b.temp,1)
     dp_obs(:,i)=[B_int.pres(i,:).';D_int.pres(i,:).'];
     sal_obs(:,i)=[B_int.sal(i,:).';D_int.sal(i,:).'];
 end
-        
+
+for time=1:size(micro_b.pres,1) 
+    for k=1:9
+        sal_obs_minus13(k,time)=sal_obs(k,time)-int_s_2013(Ip(k,time),I(k))-int_s2_2013(Ip(k,time),I(k)); %not totally sure this is right
+    end
+end
+
 var_obs=[B_sal_var.';D_sal_var.'];
 noise_obs=[noise_micro_b(:,4);noise_micro_d(:,4)];
 
@@ -257,7 +346,7 @@ for time=1:size(micro_b.pres,1) % this loop is where the optimal interpolation o
     
     for j=1:length(pgrid)
         for k=1:size(pgrid,2)
-            int_s(j,k,time)=weights(:,j,k).'*sal_obs(:,time); %check to see if dimensions work?
+            int_s(j,k,time)=weights(:,j,k).'*sal_obs_minus13(:,time); %check to see if dimensions work?
         end
     end
 end
@@ -269,7 +358,7 @@ ratio=ratio*.2;
 
 for time=1:size(micro_b.pres,1)
     for k=1:9
-        sal_obs_anom(i,time)=sal_obs(k,time)-int_s(Iz(k),I(k),time); %not totally sure this is right
+        sal_obs_anom(i,time)=sal_obs_minus13(k,time)-int_s(Ip(k),I(k),time); %not totally sure this is right
     end
 end
 
@@ -305,54 +394,97 @@ for time=1:size(micro_b.pres,1) % this loop is where the optimal interpolation o
 end
 
 
-for i=1:251
-    for j=1:182
+for i=1:420
+    for j=1:152
         mean_s(i,j)=nanmean(int_s(i,j,:));
         mean_s2(i,j)=nanmean(int_s2(i,j,:));
     end
 end
 
+% expected error
+background_error=nan(420,152);
+for i=1:size(pgrid,1)
+    for j=1:size(pgrid,2)
+        background_error(i,j)=1; %let's say it's .01 C everywhere, see what happens
+    end
+end
+
+clear analysis_error
+for i=1:size(pgrid,1)
+    for j=1:size(pgrid,2)
+        %term2(i,j)=(weight_corr(:,i,j).'*inv(ratio+cross_corr)*weight_corr(:,i,j));
+        analysis_error(i,j)=background_error(i,j)-(weight_corr(:,i,j).'*inv(ratio+cross_corr)*weight_corr(:,i,j));
+    end
+end
+
+% figures
 figure
 hold on
-contourf(xgrid,pgrid,mean_s)
+[C,h]=contourf(xgrid,pgrid,int_s_2013(:,1:152)+int_s2_2013(:,1:152),0:.25:40)
 axis 'ij'
 xlabel('Distance from coast','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
-title('Large scale salinity')
-%caxis
-%clabel
+title('Background salinity salinity','FontSize',24)
+caxis([34 36])
+clabel(C,h,0:.5:40)
 cmocean('haline')
 colorbar
 
 figure
 hold on
-contourf(xgrid,pgrid,mean_s2)
+[C,h]=contourf(xgrid,pgrid,mean_s,-3:.01:3)
 axis 'ij'
 xlabel('Distance from coast (m)','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
-title('Small scale salinity')
-%clabel
+title('Large scale salinity','FontSize',24)
+clabel(C,h,-3:.02:3)
 %caxis
+cmocean('balance','zero')
+colorbar
+
+% figure
+% hold on
+% contourf(xgrid,pgrid,mean_s2)
+% axis 'ij'
+% xlabel('Distance from coast (m)','FontSize',24)
+% ylabel('Pressure (dbar)','FontSize',24)
+% title('Small scale salinity')
+% %clabel
+% %caxis
+% cmocean('balance','zero')
+% colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,pgrid,mean_s2+mean_s+int_s_2013(:,1:152)+int_s2_2013(:,1:152),0:.25:40)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Pressure (dbar)','FontSize',24)
+title('Background+large+small scale salinity','FontSize',24)
+clabel(C,h,0:.5:40)
+caxis([34 36])
 cmocean('haline')
 colorbar
 
 figure
 hold on
-contourf(xgrid,pgrid,mean_s+mean_s2)
+[C,h]=contourf(xgrid,pgrid,analysis_error,0:.125:1)
 axis 'ij'
 xlabel('Distance from coast (m)','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
-title('Small+large scale salinity')
-%clabel
-%caxis
-cmocean('haline')
+title('Expected error ratio','FontSize',24)
+clabel(C,h,0:.25:1)
+cmocean('curl','zero')
 colorbar
+brighten(.3)
 
 
 %% make parts under topography NaN
 
-overall_lat = interp1([0,D_dx],[coast_lat,d_pos(2)],[0:500:D_dx]); 
-overall_lon = interp1([0,D_dx],[coast_lon,d_pos(1)],[0:500:D_dx]);
+% FIGURE THIS OUT.
+overall_lat = interp1([0,x(152)],[instr_pos(1,2),instr_pos(6,2)],[0:500:x(152)]); 
+overall_lon = interp1([0,x(152)],[instr_pos(1,1),instr_pos(6,1)],[0:500:x(152)]);
 
 % now compare our interpolated points to ETOPO2 and find the closest match
 % to each point
@@ -390,21 +522,23 @@ for i=1:size(overall_lat,2)
 end
 % turn this into pressure - seawater package???
 
-pres_int = nan(251,size(micro_b.pres,1),182);
+pres_int = nan(420,size(micro_b.pres,1),152);
 for i=1:size(micro_b.pres,1)
     for j=1:182 %indices
-        for k=1:251
-            pres_int(k,i,j) = 20*(k-1);
+        for k=1:420
+            pres_int(k,i,j) = 10*k;
         end
     end
 end
 
 for i=1:722
-    for j=1:182
-        for k=1:251
+    for j=1:152
+        for k=1:420
             if pres_int(k,i,j) > abs(topo_p(j,1))
                 int_t(k,j,i) = NaN;
+                int_t2(k,j,i) = NaN;
                 int_s(k,j,i) = NaN;
+                int_s2(k,j,i) = NaN;
             end
         end
     end
