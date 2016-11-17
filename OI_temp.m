@@ -218,6 +218,7 @@ clabel(C,h,0:5:20)
 cmocean('thermal')
 colorbar
 brighten(.3)
+scatter(dx_obs,dp_obs(:,1),'k','filled')
 
 figure
 hold on
@@ -424,7 +425,7 @@ hold on
 axis 'ij'
 xlabel('Distance from coast','FontSize',24)
 ylabel('Pressure (dbar)','FontSize',24)
-title('Background salinity salinity','FontSize',24)
+title('Background salinity','FontSize',24)
 caxis([34 36])
 clabel(C,h,0:.5:40)
 cmocean('haline')

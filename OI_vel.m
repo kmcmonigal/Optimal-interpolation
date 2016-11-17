@@ -26,7 +26,7 @@ C_int.z=C.ztmp4(:,2:726);
 D_int.z=D.ztmp4(:,3:727);
 
 x=0:500:1000*sw_dist([c2_pos(2) d_pos(2)],[c2_pos(1) d_pos(1)],'km');
-z=0:20:5000; % then later will make anything under topography into NaN
+z=10:10:4200; % then later will make anything under topography into NaN 10:10:4200
 for i=1:length(z)
     xgrid(i,:)=x(:);
 end
@@ -46,7 +46,10 @@ x_corr_func=@(x) exp(-(x(:)/xc).^2).*cos(pi.*x(:)./(2.*xc));
 z_corr_func=@(z) exp(-(z(:)/zc).^2);
 
 % optimal interpolation of v
-int_v=nan(251,152,size(A_int.v,2));
+int_v=nan(420,152,size(A_int.v,2));
+
+% at each time step, need to find interpolated value closest to each
+% measurement and then subtract off
 
 for time=1:size(A_int.v,2) % change back after running
     clear Noise2
@@ -56,6 +59,7 @@ for time=1:size(A_int.v,2) % change back after running
     clear cross_corr
     clear ratio
     clear weight_corr
+    clear v_obs_anom
     v_obs_time=[A_int.v(~isnan(A_int.v(:,time)),:);B_int.v(~isnan(B_int.v(:,time)),:);C_int.v(~isnan(C_int.v(:,time)),:);D_int.v(~isnan(D_int.v(:,time)),:)];
     dz_obs=[A_int.z(~isnan(A_int.v(:,time)),time);B_int.z(~isnan(B_int.v(:,time)),time);C_int.z(~isnan(C_int.v(:,time)),time);D_int.z(~isnan(D_int.v(:,time)),time)];
     v_obs=[A_int.v(~isnan(A_int.v(:,time)),time);B_int.v(~isnan(B_int.v(:,time)),time);C_int.v(~isnan(C_int.v(:,time)),time);D_int.v(~isnan(D_int.v(:,time)),time)];
@@ -119,6 +123,31 @@ for time=1:size(A_int.v,2) % change back after running
             cross_corr(i,j)=x_corr_func(abs(dx(i)-dx(j)))*z_corr_func(abs(dz_obs(i)-dz_obs(j)));
         end
     end
+    % subtract off anomalies
+    for i=1:size(dz_obs,1) % CHECK THIS IS OK
+        for j=1:size(zgrid,1)
+            dz_dist(i,j)=abs(zgrid(j,1)-dz_obs(i));
+        end
+    end
+    
+    for i=1:size(dz_dist,1) % CHECK THIS IS OK
+        [Mz(i),Iz(i)] = min(dz_dist(i,:));
+    end
+    
+    for i=1:size(dx,2) % CHECK THIS IS OK
+        for j=1:152
+            grid_dist(i,j)=abs(xgrid(1,j)-dx(i));
+        end
+    end
+    
+    for i=1:size(dx,2)
+        [M(i),I(i)] = min(grid_dist(i,:));
+    end
+    
+    for i=1:size(v_obs) % CHECK THIS IS OK
+        v_obs_anom(i)=v_obs(i)-int_vel(Iz(i),I(i),2)-int_vel2(Iz(i),I(i),2);
+    end
+    
     % solve for weights
     for j=1:length(zgrid)
         for k=1:size(zgrid,2)
@@ -128,7 +157,7 @@ for time=1:size(A_int.v,2) % change back after running
 
     for j=1:length(zgrid)
         for k=1:size(zgrid,2)
-            int_v(j,k,time)=weights(:,j,k).'*v_obs; % mean already subtracted
+            int_v(j,k,time)=weights(:,j,k).'*v_obs_anom.'; % mean already subtracted
         end
     end
 end
@@ -141,7 +170,7 @@ C_int.u=C.utmp4_filt(:,2:726);
 D_int.u=D.utmp4_filt(:,3:727);
 
 all_obs=[A_int.u;B_int.u;C_int.u;D_int.u];
-int_u=nan(251,152,size(A_int.u,2));
+int_u=nan(420,152,size(A_int.u,2));
 
 for time=1:size(A_int.v,2) % change back after running
     clear Noise2
@@ -151,6 +180,7 @@ for time=1:size(A_int.v,2) % change back after running
     clear cross_corr
     clear ratio
     clear weight_corr
+    clear u_obs_anom
     u_obs_time=[A_int.u(~isnan(A_int.u(:,time)),:);B_int.u(~isnan(B_int.u(:,time)),:);C_int.u(~isnan(C_int.u(:,time)),:);D_int.u(~isnan(D_int.u(:,time)),:)];
     dz_obs=[A_int.z(~isnan(A_int.u(:,time)),time);B_int.z(~isnan(B_int.u(:,time)),time);C_int.z(~isnan(C_int.u(:,time)),time);D_int.z(~isnan(D_int.u(:,time)),time)];
     u_obs=[A_int.u(~isnan(A_int.u(:,time)),time);B_int.u(~isnan(B_int.u(:,time)),time);C_int.u(~isnan(C_int.u(:,time)),time);D_int.u(~isnan(D_int.u(:,time)),time)];
@@ -214,6 +244,31 @@ for time=1:size(A_int.v,2) % change back after running
             cross_corr(i,j)=x_corr_func(abs(dx(i)-dx(j)))*z_corr_func(abs(dz_obs(i)-dz_obs(j)));
         end
     end
+        % subtract off anomalies
+    for i=1:size(dz_obs,1) % CHECK THIS IS OK
+        for j=1:size(zgrid,1)
+            dz_dist(i,j)=abs(zgrid(j,1)-dz_obs(i));
+        end
+    end
+    
+    for i=1:size(dz_dist,1) % CHECK THIS IS OK
+        [Mz(i),Iz(i)] = min(dz_dist(i,:));
+    end
+    
+    for i=1:size(dx,2) % CHECK THIS IS OK
+        for j=1:152
+            grid_dist(i,j)=abs(xgrid(1,j)-dx(i));
+        end
+    end
+    
+    for i=1:size(dx,2)
+        [M(i),I(i)] = min(grid_dist(i,:));
+    end
+    
+    for i=1:size(u_obs) % CHECK THIS IS OK
+        u_obs_anom(i)=u_obs(i)-int_vel(Iz(i),I(i),1)-int_vel2(Iz(i),I(i),1);
+    end
+    
     % solve for weights
     for j=1:length(zgrid)
         for k=1:size(zgrid,2)
@@ -223,7 +278,7 @@ for time=1:size(A_int.v,2) % change back after running
 
     for j=1:length(zgrid)
         for k=1:size(zgrid,2)
-            int_u(j,k,time)=weights(:,j,k).'*u_obs; % mean already subtracted
+            int_u(j,k,time)=weights(:,j,k).'*u_obs_anom.'; % mean already subtracted
         end
     end
 end
@@ -354,7 +409,7 @@ end
 
 % small scale for v
 
-for time=1:size(A_int.v,2) % change back after running
+for time=510:size(A_int.v,2) % change back after running
     clear Noise2
     clear u_obs_time
     clear dx
@@ -471,18 +526,18 @@ end
 
 % make NaN if below topography
 
-B_dx=1000*sw_dist([coast_lat b_pos(2)],[coast_lon b_pos(1)],'km');
-D_dx=1000*sw_dist([coast_lat d_pos(2)],[coast_lon d_pos(1)],'km');
+%B_dx=1000*sw_dist([c2_pos b_pos(2)],[coast_lon b_pos(1)],'km');
+%D_dx=1000*sw_dist([coast_lat d_pos(2)],[coast_lon d_pos(1)],'km');
 
-overall_lat = interp1([0,D_dx],[coast_lat,d_pos(2)],[0:500:D_dx]); 
-overall_lon = interp1([0,D_dx],[coast_lon,d_pos(1)],[0:500:D_dx]);
+overall_lat = interp1([0,x(347)],[c2_pos(2),g_pos(2)],[0:500:x(347)]); 
+overall_lon = interp1([0,x(347)],[c2_pos(1),g_pos(1)],[0:500:x(347)]);
 
 % now compare our interpolated points to ETOPO2 and find the closest match
 % to each point
 [elev,long,lat]=m_etopo2([27 28 -34 -33]);
 
-dist = nan(182,61,61);
-for i=1:182
+dist = nan(347,61,61);
+for i=1:347
     for j=1:61
         for k=1:61
             dist(i,j,k) = sw_dist([overall_lat(1,i) lat(j,k)],[overall_lon(1,i) long(j,k)],'km');
@@ -492,26 +547,26 @@ end
 
 clear M
 clear I
-closest = nan(182,1);
-for i=1:182
+closest = nan(347,1);
+for i=1:347
     min_temp = dist(i,:,:);
     temp = min_temp(:);
     [M,I] = min(temp);
     closest(i,1) = I;
 end
 
-for i=1:182
+for i=1:347
     [I_row(i),I_col(i)] = ind2sub([61,61],closest(i));
 end
 
-topo = nan(182,1);
-for i=1:182
+topo = nan(347,1);
+for i=1:347
     topo(i,1) = elev(I_row(i),I_col(i));
 end
 
-depth_int = nan(251,725,182);
+depth_int = nan(251,725,152);
 for i=1:725
-    for j=1:182
+    for j=1:152
         for k=1:251
             depth_int(k,i,j) = 20*(k-1);
         end
@@ -519,7 +574,7 @@ for i=1:725
 end
 
 for i=1:725
-    for j=1:182
+    for j=1:152
         for k=1:251
             if depth_int(k,i,j) > abs(topo(j,1))
                 u_vel(k,j,i) = NaN;
@@ -530,4 +585,174 @@ for i=1:725
 end
 
 % rotate into along, cross stream
-[across,along,dist,angle]=rotate_hydro([b_pos(2) d_pos(2)],[b_pos(1) d_pos(1)],u_vel,v_vel);
+[across,along,dist,angle]=rotate_hydro([b_pos(2) d_pos(2)],[b_pos(1) d_pos(1)],int_u,int_v);
+[across2,along2,dist2,angle2]=rotate_hydro([b_pos(2) d_pos(2)],[b_pos(1) d_pos(1)],int_u2,int_v2);
+
+
+% some figures
+for i=1:251
+    for j=1:152
+        mean_across(i,j)=nanmean(across(i,j,:));
+        mean_across2(i,j)=nanmean(across2(i,j,:));
+        mean_u(i,j)=nanmean(int_u(i,j,1:500));
+        mean_u2(i,j)=nanmean(int_u2(i,j,1:500));
+        mean_v(i,j)=nanmean(int_v(i,j,1:500));
+        mean_v2(i,j)=nanmean(int_v2(i,j,1:500));
+        mean_along(i,j)=nanmean(along(i,j,:));
+        mean_along2(i,j)=nanmean(along(i,j,:));
+    end
+end
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_across,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated cross line velocity: large scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_across2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated cross line velocity: small scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_across+mean_across2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated cross line velocity: large+small','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_along,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated along velocity: large scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_along2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated along velocity: small scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_along+mean_along2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated along velocity: large+small','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_u,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated u velocity: large scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_u2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated u velocity: small scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_u+mean_u2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated cross line velocity: large+small','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_v,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated v velocity: large scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_v2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated v velocity: small scale','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
+
+
+figure
+hold on
+[C,h]=contourf(xgrid,zgrid,mean_v+mean_v2,-3:.1:1)
+axis 'ij'
+xlabel('Distance from coast (m)','FontSize',24)
+ylabel('Depth (m)','FontSize',24)
+title('Time mean interpolated v velocity: large+small','FontSize',24)
+%caxis
+clabel(C,h,-3:.2:1)
+cmocean('balance','zero')
+colorbar
