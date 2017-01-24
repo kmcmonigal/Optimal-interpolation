@@ -138,15 +138,25 @@ z_corr_func=@(z) exp(-(z(:)/zc).^2);
 
 int_ac2=nan(size(xgrid,1),size(xgrid,2),size(A.ac,2));
 int_ac=nan(size(xgrid,1),size(xgrid,2),size(A.ac,2));
-for time=1:size(A.u,2)
-    clear Noise2
-    clear ac_obs_time
-    clear dx
-    clear weights_ac
-    clear cross_corr
-    clear ratio_ac
-    clear weight_corr
-    clear ac_obs
+parfor time=1:size(A.u,2)
+    Noise2=[];
+    ac_obs_time=[];
+    dx=[];
+    weights_ac=[];
+    cross_corr=[];
+    ratio_ac=[];
+    weight_corr=[];
+    ac_obs=[];
+    temp1=[];
+    temp2=[];
+    grid_dist=[];
+    Mz=[];
+    Iz=[];
+    M=[];
+    I=[];
+    dz_dist=[];
+    ac_obs_anom=[];
+    temp3=[];
     xc=63*1000; %horizontal decorrelation length
     zc=1913; %vertical decorrelation length
     ac_obs_time=[A.ac(~isnan(A.ac(:,time)),:);B.ac(~isnan(B.ac(:,time)),:);C.ac(~isnan(C.ac(:,time)),:);D.ac(~isnan(D.ac(:,time)),:);E.ac(~isnan(E.ac(:,time)),:);F.ac(~isnan(F.ac(:,time)),:);p2.ac.';G.ac(~isnan(G.ac(:,time)),:);cpies34_(~isnan(cpies34_(:,time)),:);cpies45_(~isnan(cpies45_(:,time)),:)];
@@ -226,9 +236,20 @@ for time=1:size(A.u,2)
 
     for j=1:size(zgrid,1)
         for k=1:size(zgrid,2)
-            int_ac(j,k,time)=weights_ac(:,j,k).'*ac_obs;
+            temp1(j,k)=weights_ac(:,j,k).'*ac_obs;
         end
     end
+    int_ac(:,:,time)=temp1(:,:);
+    % this will give you the error predicted from the OI but will slow down
+    % the total computation time significantly
+%     background_error=ones(size(xgrid,1),size(xgrid,2));
+%     for i=1:size(xgrid,1)
+%         for j=1:size(xgrid,2)
+%             temp3(i,j)=background_error(i,j)-(weight_corr(:,i,j).'*inv(ratio+cross_corr)*weight_corr(:,i,j));
+%         end
+%     end
+%     analysis_error(:,:,time)=temp3(:,:);
+    
     % repeat on small scale
     small_scale_ratio=.2; % may want to test different values
     
@@ -255,7 +276,7 @@ for time=1:size(A.u,2)
     end
     
     for i=1:size(ac_obs) % this will come in for the small scale part
-        ac_obs_anom(i)=ac_obs(i)-int_ac(Iz(i),I(i),time);
+        ac_obs_anom(i)=ac_obs(i)-temp1(Iz(i),I(i));
     end
     
     cross_corr=nan(length(Noise2),length(Noise2));
@@ -276,11 +297,14 @@ for time=1:size(A.u,2)
     
     for j=1:size(zgrid,1)
         for k=1:size(zgrid,2)
-            int_ac2(j,k,time)=weights_ac(:,j,k).'*ac_obs_anom.';
+            temp2(j,k)=weights_ac(:,j,k).'*ac_obs_anom.';
         end
     end
+    int_ac2(:,:,time)=temp2(:,:);
 end
 vel_d1=int_ac+int_ac2;
+
+
 
 % deployment 2
 
@@ -347,8 +371,6 @@ for i=1:length(x)
     zgrid(:,i)=z(:);
 end
 
-p2.u=getnc('P2_241_currents.nc');
-p2.v=getnc('P2_241_currents.nc');
 p2.u=p2.u(700*20:20:1249*20);
 p2.v=p2.v(700*20:20:1249*20);
 
@@ -386,18 +408,27 @@ z_corr_func=@(z) exp(-(z(:)/zc).^2);
 
 int_act=nan(size(xgrid,1),size(xgrid,2),size(A.ac,2));
 int_act2=nan(size(xgrid,1),size(xgrid,2),size(A.ac,2));
-for time=1:size(A.u,2)
+parfor time=1:size(A.u,2)
     xc=48*1000; %horizontal decorrelation length
     zc=1009; %vertical decorrelation length
-    clear Noise2
-    clear ac_obs_time
-    clear ac_obs_anom
-    clear dx
-    clear weights_ac
-    clear cross_corr
-    clear ratio_ac
-    clear weight_corr
-    clear ac_obs
+    Noise2=[];
+    ac_obs_time=[];
+    ac_obs_anom=[];
+    dx=[];
+    weights_ac=[];
+    cross_corr=[];
+    ratio_ac=[];
+    weight_corr=[];
+    ac_obs=[];
+    M=[];
+    I=[];
+    Mz=[];
+    Iz=[];
+    temp1=[];
+    temp2=[];
+    grid_dist=[];
+    dz_dist=[];
+    temp3=[];
     ac_obs_time=[A.ac(~isnan(A.ac(:,time)),:);B.ac(~isnan(B.ac(:,time)),:);C.ac(~isnan(C.ac(:,time)),:);D.ac(~isnan(D.ac(:,time)),:);E.ac(~isnan(E.ac(:,time)),:);F.ac(~isnan(F.ac(:,time)),:);p2.ac.';G.ac(~isnan(G.ac(:,time)),:);cpies34_(~isnan(cpies34_(:,time)),:);cpies45_(~isnan(cpies45_(:,time)),:)];
     dz_obs=[A.z(~isnan(A.v(:,time)),time);B.z(~isnan(B.v(:,time)),time);C.z(~isnan(C.v(:,time)),time);D.z(~isnan(D.v(:,time)),time);E.z(~isnan(E.v(:,time)),time);F.z(~isnan(F.v(:,time)),time);4183;G.z(~isnan(G.v(:,time)),time);dpth34_(~isnan(cpies34_(:,time)));dpth45_(~isnan(cpies45_(:,time)))];
     ac_obs=[A.ac(~isnan(A.ac(:,time)),time);B.ac(~isnan(B.ac(:,time)),time);C.ac(~isnan(C.ac(:,time)),time);D.ac(~isnan(D.ac(:,time)),time);E.ac(~isnan(E.ac(:,time)),time);F.ac(~isnan(F.ac(:,time)),time);p2.ac(time);G.ac(~isnan(G.ac(:,time)),time);cpies34_(~isnan(cpies34_(:,time)),time);cpies45_(~isnan(cpies45_(:,time)),time)];
@@ -411,7 +442,7 @@ for time=1:size(A.u,2)
     for i=1:length(Noise2)
         for j=1:length(Noise2)
             if i==j
-                ratio_ac(i,j)=Noise2(i)/nanvar(ac_obs_time(i,:)); % seems bad that these values are so big. is this right? what was it on the one obs case?
+                ratio_ac(i,j)=Noise2(i)/nanvar(ac_obs_time(i,:));
             end
         end
     end
@@ -474,9 +505,20 @@ for time=1:size(A.u,2)
 
     for j=1:size(zgrid,1)
         for k=1:size(zgrid,2)
-            int_act(j,k,time)=weights_ac(:,j,k).'*ac_obs;
+            temp1(j,k)=weights_ac(:,j,k).'*ac_obs;
         end
     end
+    int_act(:,:,time)=temp1(:,:);
+    % this will give you the error predicted from the OI but will slow down
+    % the total computation time significantly
+    %     background_error=ones(size(xgrid,1),size(xgrid,2));
+    %     for i=1:size(xgrid,1)
+    %         for j=1:size(xgrid,2)
+    %             temp3(i,j)=background_error(i,j)-(weight_corr(:,i,j).'*inv(ratio+cross_corr)*weight_corr(:,i,j));
+    %         end
+    %     end
+    %     analysis_error2(:,:,time)=temp3(:,:);
+    
     
     %small scale
     small_scale_ratio=.2;
@@ -504,7 +546,7 @@ for time=1:size(A.u,2)
     end
     
     for i=1:size(ac_obs) % this will come in for the small scale part
-        ac_obs_anom(i)=ac_obs(i)-int_act(Iz(i),I(i),time);
+        ac_obs_anom(i)=ac_obs(i)-temp1(Iz(i),I(i));
     end
     
     cross_corr=nan(length(Noise2),length(Noise2));
@@ -524,9 +566,10 @@ for time=1:size(A.u,2)
     
     for j=1:size(zgrid,1)
         for k=1:size(zgrid,2)
-            int_act2(j,k,time)=weights_ac(:,j,k).'*ac_obs_anom.';
+            temp2(j,k)=weights_ac(:,j,k).'*ac_obs_anom.';
         end
     end
+    int_act2(:,:,time)=temp2(:,:);
 end
 
 vel_d2=int_act_int_act2;
