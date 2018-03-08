@@ -1,5 +1,7 @@
-% interpolate the ACT velocities at every time step using OI
-% first and second deployments done seperately
+%% Optimal interpolation for velocity data recovered on ASCA 042018 cruise
+% first need to process data: must start and end at same time point, same
+% sampling interval, spikes/gaps removed, 40 hour low pass filtered, with u
+% and v corresponding to along, across current axis
 
 test_act=1;
 timesteps=1;
