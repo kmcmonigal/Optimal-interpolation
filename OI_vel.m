@@ -83,8 +83,8 @@ end
 use_background=0; % subtract a "background field" and map anomalies vs mapping field itself
 Lx=63*1000; % horizontal decorrelation length scale
 Lz=1913; % vertical decorrelation length scale
-lx=.3*63*1000; % small scale decorrelation length scales
-lz=.3*1913;
+lx=.5*63*1000; % small scale decorrelation length scales
+lz=.5*1913;
 N=.07; % noise ratio
 
 % correlation functions
@@ -143,38 +143,12 @@ z=0:20:4500; % then later will make anything under topography nan
 % need to go back and review why exactly i was doing it this way, what is
 % best way to quantify noise
 
-noisev=N./nanvar([A.v;B.v;C.v;D.v;E.v;F.v;G.v].'); % right the problem with this is that number of measurements changes at each time point
+noisev=N./nanvar([A.v;B.v;C.v;D.v;E.v;F.v;G.v].');
 noiseu=N./nanvar([A.u;B.u;C.u;D.u;E.u;F.v;G.u].');
+noise=(noiseu+noisev)/2; % take mean of two noise values since they aren't that different
 
 % map time mean, do two iterations
-noise=complex(diag(noiseu),diag(noisev));
-noise(isnan(noise))=complex(.01,.01);
 z_mean=[nanmean(A.z,2);nanmean(B.z,2);nanmean(C.z,2);nanmean(D.z,2);nanmean(E.z,2);nanmean(F.z,2);nanmean(G.z,2)];
-
-weight_corr=nan(length(noise),size(zgrid,1),size(zgrid,2));
-for j=1:length(noise)
-    for k=1:size(zgrid,1) % was length(zgrid)
-        for l=1:size(zgrid,2)
-            weight_corr(j,k,l)=Xc(abs(xgrid(k,l)-dist(j)))*Zc(abs(zgrid(k,l)-z_mean(j)));
-        end
-    end
-end
-
-% get cross corr between instruments
-cross_corr=nan(length(noise),length(noise));
-for j=1:length(noise)
-    for k=1:length(noise)
-        cross_corr(j,k)=Xc(abs(dist(j)-dist(k)))*Zc(abs(z_mean(j)-z_mean(k)));
-    end
-end
-
-% solve for weights
-weights=nan(size(weight_corr,1),size(zgrid,1),size(zgrid,2));
-for j=1:size(zgrid,1)
-    for k=1:size(zgrid,2)
-        weights(:,j,k)=((noise+cross_corr)\weight_corr(:,j,k));
-    end
-end
 
 u=[nanmean(A.u,2);nanmean(B.u,2);nanmean(C.u,2);nanmean(D.u,2);nanmean(E.u,2);nanmean(F.u,2);nanmean(G.u,2)]; % don't get along track velocity from cpies. let's assume not using cpies
 v=[nanmean(A.v,2);nanmean(B.v,2);nanmean(C.v,2);nanmean(D.v,2);nanmean(E.v,2);nanmean(F.v,2);nanmean(G.v,2)];% cpies34(:),i);cpies45(:,i)];
@@ -182,12 +156,45 @@ v=[nanmean(A.v,2);nanmean(B.v,2);nanmean(C.v,2);nanmean(D.v,2);nanmean(E.v,2);na
 mean_u=nanmean(nanmean(u));
 mean_v=nanmean(nanmean(v));
 
-w=complex(u,v)-complex(mean_u,mean_v);
-weights(isnan(w))=0;
-w(isnan(w))=0;
+u_anom=u-mean_u;
+v_anom=v-mean_v;
+gaps=isnan(u_anom);
+u_anom2=u_anom(gaps==0);
+v_anom2=v_anom(gaps==0);
+z_mean2=z_mean(gaps==0);
+noise2=noise(gaps==0);
+dist2=dist(gaps==0);
+noise3=diag(noise2);
+
+weight_corr=nan(length(noise2),size(zgrid,1),size(zgrid,2));
+for j=1:length(noise2)
+    for k=1:size(zgrid,1) % was length(zgrid)
+        for l=1:size(zgrid,2)
+            weight_corr(j,k,l)=Xc(abs(xgrid(k,l)-dist2(j)))*Zc(abs(zgrid(k,l)-z_mean2(j)));
+        end
+    end
+end
+
+% get cross corr between instruments
+cross_corr=nan(length(noise2),length(noise2));
+for j=1:length(noise2)
+    for k=1:length(noise2)
+        cross_corr(j,k)=Xc(abs(dist2(j)-dist2(k)))*Zc(abs(z_mean2(j)-z_mean2(k)));
+    end
+end
+
+% solve for weights
+weights=nan(size(weight_corr,1),size(zgrid,1),size(zgrid,2));
 for j=1:size(zgrid,1)
     for k=1:size(zgrid,2)
-        vel_mean(j,k)=weights(:,j,k).'*w+complex(mean_u,mean_v); % if w has nan's it gives us all nan. need to fix that. do weights have to add to something to get a right answer???
+        weights(:,j,k)=((noise3+cross_corr)\weight_corr(:,j,k));
+    end
+end
+
+for j=1:size(zgrid,1)
+    for k=1:size(zgrid,2)
+        vel_mean_u(j,k)=(weights(:,j,k).'*u_anom2)+mean_u; % clearly this is not right
+        vel_mean_v(j,k)=(weights(:,j,k).'*v_anom2)+mean_v;
     end
 end
 
@@ -208,33 +215,29 @@ for i=1:timesteps
     v2=v(gaps==0);
     z2=z(gaps==0);
     dist2=dist(gaps==0);
-    noisev2=noisev(gaps==0);
-    noiseu2=noiseu(gaps==0);
-
-    % make diagonal noise matrix
-    noise=complex(diag(noiseu2),diag(noisev2));
+    noise2=noise(gaps==0);
+    noise3=diag(noise2);
     
-    % let's map as complex data: w=u+iv
-    w=complex(u2,v2);
-    
-    for j=1:size(z2,1)
+    for j=1:size(z,1)
         for k=1:size(zgrid,1)
-            dz_dist(j,k)=abs(zgrid(k,1)-z2(j));
+            dz_dist(j,k)=abs(zgrid(k,1)-z(j));
         end
         [Mz,Iz] = min(dz_dist(j,:));
         for k=1:size(xgrid,2)
-            grid_dist(j,k)=abs(xgrid(1,k)-dist2(j));
+            grid_dist(j,k)=abs(xgrid(1,k)-dist(j));
         end
         [M,I] = min(grid_dist(j,:));
-        vel_mean_anom(j)=w(j)-vel_mean(Iz,I);
+        u_mean_anom(j)=u(j)-vel_mean_u(Iz,I);
+        v_mean_anom(j)=v(j)-vel_mean_v(Iz,I);
     end
     
-    vel_mean_anom2=vel_mean_anom(gaps==0);
+    u_mean_anom2=u_mean_anom(gaps==0);
+    v_mean_anom2=v_mean_anom(gaps==0);
     
     % now get cross correlations between instruments, grid points
-    weight_corr=nan(length(noise),length(zgrid),size(zgrid,2));
-    for j=1:length(noise)
-        for k=1:size(zgrid,1) % was length(zgrid)
+    weight_corr=nan(length(noise2),size(zgrid,1),size(zgrid,2));
+    for j=1:length(noise2)
+        for k=1:size(zgrid,1)
             for l=1:size(zgrid,2)
                 weight_corr(j,k,l)=Xc(abs(xgrid(k,l)-dist2(j)))*Zc(abs(zgrid(k,l)-z2(j)));
             end
@@ -242,9 +245,9 @@ for i=1:timesteps
     end
     
     % get cross corr between instruments
-    cross_corr=nan(length(noise),length(noise));
-    for j=1:length(noise)
-        for k=1:length(noise)
+    cross_corr=nan(length(noise2),length(noise2));
+    for j=1:length(noise2)
+        for k=1:length(noise2)
             cross_corr(j,k)=Xc(abs(dist2(j)-dist2(k)))*Zc(abs(z2(j)-z2(k)));
         end
     end
@@ -253,11 +256,13 @@ for i=1:timesteps
     weights=nan(size(weight_corr,1),size(zgrid,1),size(zgrid,2));
     for j=1:size(zgrid,1)
         for k=1:size(zgrid,2)
-            weights(:,j,k)=((noise+cross_corr)\weight_corr(:,j,k)); % what are ratio_ac, ac_obs
-            temp(j,k)=weights(:,j,k).'*vel_mean_anom2.';
+            weights(:,j,k)=((noise3+cross_corr)\weight_corr(:,j,k)); % what are ratio_ac, ac_obs
+            u_anom3(j,k)=weights(:,j,k).'*u_mean_anom2.';
+            v_anom3(j,k)=weights(:,j,k).'*v_mean_anom2.';
         end
     end
-    vel_total(:,:,i)=temp+vel_mean;
+    u_total(:,:,i)=u_anom3+vel_mean_u;
+    v_total(:,:,i)=v_anom3+vel_mean_v;
 
     disp([i toc])
 end
