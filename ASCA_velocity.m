@@ -543,19 +543,19 @@ z=0:20:4500; % then later will make anything under topography nan
 
 [xgrid,zgrid]=meshgrid(x,z);
 
-% set up a noise matrix by finding variace of each measurement
+% set up a noise matrix by finding variace of each measurement. this is the matrix B in 4.2.10 of Daley ("background error covariance matrix")
 
-noisev=N./nanvar([A.v;B.v;C.v;D.v;E.v;F.v;G.v].'); % issue: not the same size
-noiseu=N./nanvar([A.u;B.u;C.u;D.u;E.u;F.v;G.u].');
-noise=(noiseu+noisev)/2; % take mean of two noise values since they aren't that different
+noisev=N./nanvar([A.v;B.v;C.v;D.v;E.v;F.v;G.v].');
+noiseu=N./nanvar([A.u;B.u;C.u;D.u;E.u;F.v;G.u].'); % noise:signal ratio is instrument noise (set above)/variance of measurements
+noise=(noiseu+noisev)/2; % take the mean since they are very similar
 
 z_mean=[nanmean(A.z,2);nanmean(B.z,2);nanmean(C.z,2);nanmean(D.z,2);nanmean(E.z,2);nanmean(F.z,2);nanmean(G.z,2)];
 
 u=[nanmean(A.u,2);nanmean(B.u,2);nanmean(C.u,2);nanmean(D.u,2);nanmean(E.u,2);nanmean(F.u,2);nanmean(G.u,2)]; 
 v=[nanmean(A.v,2);nanmean(B.v,2);nanmean(C.v,2);nanmean(D.v,2);nanmean(E.v,2);nanmean(F.v,2);nanmean(G.v,2)];
 
-mean_u=nanmean(nanmean(u));
-mean_v=nanmean(nanmean(v));
+mean_u=0;%nanmean(nanmean(u)); % we could assume some background field but let's not for now
+mean_v=0;%nanmean(nanmean(v));
 
 u_anom=u-mean_u;
 v_anom=v-mean_v;
@@ -567,6 +567,7 @@ noise2=noise(gaps==0);
 dist2=dist(gaps==0);
 noise3=diag(noise2);
 
+% this creates a matrix which is the error covariance between each instrument and each grid point (B_i in 4.2.10 of Daley)
 weight_corr=nan(length(noise2),size(zgrid,1),size(zgrid,2));
 for j=1:length(noise2)
     for k=1:size(zgrid,1)
@@ -576,7 +577,7 @@ for j=1:length(noise2)
     end
 end
 
-% get cross corr between instruments
+% get cross correlation between instruments. this is the matrix O in 4.2.10 of Daley ("observation error covariance matrix")
 cross_corr=nan(length(noise2),length(noise2));
 for j=1:length(noise2)
     for k=1:length(noise2)
@@ -584,7 +585,7 @@ for j=1:length(noise2)
     end
 end
 
-% solve for weights
+% solve for weights (W_i in Daley)
 weights=nan(size(weight_corr,1),size(zgrid,1),size(zgrid,2));
 for j=1:size(zgrid,1)
     for k=1:size(zgrid,2)
@@ -592,6 +593,7 @@ for j=1:size(zgrid,1)
     end
 end
 
+% use the weights that we just solved for to get the u and v velocity at each grid point
 for j=1:size(zgrid,1)
     for k=1:size(zgrid,2)
         vel_mean_u(j,k)=(weights(:,j,k).'*u_anom2)+mean_u;
@@ -604,10 +606,10 @@ end
 tic
 for i=1:940 % map over each time step
     % put all the obervations from that point in time into a matrix
-    u=[A.u(:,i);B.u(:,i);C.u(:,i);D.u(:,i);E.u(:,i);F.u(:,i);G.u(:,i)]; % don't get along track velocity from cpies. let's assume not using cpies
+    u=[A.u(:,i);B.u(:,i);C.u(:,i);D.u(:,i);E.u(:,i);F.u(:,i);G.u(:,i)]; 
     v=[A.v(:,i);B.v(:,i);C.v(:,i);D.v(:,i);E.v(:,i);F.v(:,i);G.v(:,i)];% cpies34(:),i);cpies45(:,i)];
     
-    % depth of each of those observations
+    % depth of each of those observations (no CPIES for now)
     z=[A.z(:,i);B.z(:,i);C.z(:,i);D.z(:,i);E.z(:,i);F.z(:,i);G.z(:,i)];% dpth34_(~isnan(cpies34_(:,i)));dpth45_(~isnan(cpies45_(:,i)))];
     
     % see if any of the observations are nan, get rid of those
@@ -621,12 +623,7 @@ for i=1:940 % map over each time step
     noiseu2=noiseu(gaps==0);
 
     % make diagonal noise matrix
-    noise=diag((noiseu2+noisev2)/2);
-    %noise(isinf(noise))=.001;
-    
-    % let's map as complex data: w=u+iv
-    %vel_mean=complex(vel_mean_u,vel_mean_v);
-    %w=complex(u2,v2);
+    noise=diag((noiseu2+noisev2)/2); % just take mean of u, v noise since they are very similar
     
     vel_mean_anomu=nan(1,size(z2,1));
     vel_mean_anomv=nan(1,size(z2,1));
@@ -639,7 +636,7 @@ for i=1:940 % map over each time step
             grid_dist(j,k)=abs(xgrid(1,k)-dist2(j));
         end
         [M,I] = min(grid_dist(j,:));
-        vel_mean_anomu(j)=u2(j)-vel_mean_u(Iz,I);%-vel_mean2(Iz,I); % what is vel_mean2???
+        vel_mean_anomu(j)=u2(j)-vel_mean_u(Iz,I);
         vel_mean_anomv(j)=v2(j)-vel_mean_v(Iz,I);
     end
    
@@ -647,7 +644,7 @@ for i=1:940 % map over each time step
     % now get cross correlations between instruments, grid points
     weight_corr2=nan(length(noise),size(zgrid,1),size(zgrid,2));
     for j=1:length(noise)
-        for k=1:size(zgrid,1) % was length(zgrid)
+        for k=1:size(zgrid,1)
             for l=1:size(zgrid,2)
                 weight_corr2(j,k,l)=Xc(abs(xgrid(k,l)-dist2(j)))*Zc(abs(zgrid(k,l)-z2(j)));
             end
@@ -666,7 +663,7 @@ for i=1:940 % map over each time step
     weights2=nan(size(weight_corr2,1),size(zgrid,1),size(zgrid,2));
     for j=1:size(zgrid,1)
         for k=1:size(zgrid,2)
-            weights2(:,j,k)=((noise+cross_corr2)\weight_corr2(:,j,k)); % what are ratio_ac, ac_obs
+            weights2(:,j,k)=((noise+cross_corr2)\weight_corr2(:,j,k)); 
             temp_u(j,k)=(weights2(:,j,k).'*vel_mean_anomu.');
             temp_v(j,k)=(weights2(:,j,k).'*vel_mean_anomv.');
         end
